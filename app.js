@@ -1,196 +1,206 @@
-const express = require("express");    // this is all you need for a server
-
-const app = express();    // variable run as a function
-
+const express = require("express");    //npm install express
+const mongoose = require("mongoose");  //npm install mongoose
 const bodyParser = require("body-parser");
-
-const fs = require("fs");
-
-
-
-let http = require("http").Server(app);  //class with a Server Method that accepts express server as variable intake
-
-
-
-app.use("/", express.static("./client") ); // serving the files on client-this is in reference to the html?
-
-// app.use("/secretfolder", express.static("private/") );   // setting up different static directory roots -  routing to different folder
-
-// following two lines are for body parser to understand objects thru post requests
+//Server
+const app = express();
+const http = require("http").Server(app);  // connect http server with express server
+// Connection to the MongoDB for todoApp with userid and pwd
+const dbConnect = "mongodb+srv://todoAppuser:todoAppusertt@cluster0-gbm50.mongodb.net/test?retryWrites=true";
+mongoose.connect(dbConnect,{useNewUrlParser: true }, (error) => {
+	if (error) {
+		console.log("There was an error connecting with MongoDB", error);
+	} else {
+		console.log("Connection to MongoDB successful!");
+	}
+});
+// Copies JS Promise to mongoose. to understand what a JS promise is
+mongoose.Promise = global.Promise;
+let db = mongoose.connection;
+// Tells mongoose what to do with MongoDB errors and also tells it to send it to the JS console.
+db.on('error', console.error.bind(console, "MongoDB connection error: "));
 
 app.use(bodyParser.json());
-
 app.use(bodyParser.urlencoded({extended:false}));
+app.use("/", express.static("./client"));  // reference to client folder
 
+const port = 3000;
+http.listen(port);
+console.log(`Express is now running on port ${port}`);
+// if Cannot GET / on local host 3000 you need index.html
+// but not needed if using POSTMAN
+//        ---------end of boiler plate static code
+// Grabs a copy of the empty Mongoose Schema class.
+let Schema = mongoose.Schema;
+// Customizes our empty class into a custom class and stored in mySchema.
+let todoSchema = new Schema({
+	username: String,  // who created the todo item
+	title: String,
+	description: String, //description of the todo
+	priority: String,  // number
+	dueDate: String,  // must use Javascript Date Object number
+	status: String,
+	list: String
+});
+// model is keyword tells where to save it in mongoose  -- a class to make a new object notes- collection of documents  schema with properties
+let todoModel = new mongoose.model("notes", todoSchema); // notes is the name of the collection, todoSchema is the Schema modelled off of the mongoose schema
 
+//post handler for creating notes  CREATE
+app.post("/createNote", (request, response) => {
+	//console.log(` request sends the following: ${request.body}`); // 2 see only the body message note if you dont specify .body it shows the entire object which is the packet itself
+// mongodb object for database w/ the class above
+	let newNote = todoModel({
+		username: request.body.username,   // value input into POSTMAN
+		title: request.body.title,
+		description: request.body.description,
+		priority: request.body.priority,
+		dueDate: request.body.dueDate,
+		status: request.body.status,
+		list: null
+	});
+// save note object to mongodb
+	newNote.save((error) => {
+		if (error) {
+			console.log("There was an issue with Mongoose", error);  // respond to front end if fail
+			response.sendStatus(500);
+		} else {
+			console.log("saved mongoose successful"); // respond if success
+//			response.send({status: "ok"}); line 63-68 is GET in POST format
+			response.sendStatus(200);
 
+		}
+	});
+});
 
+// read handler - listener
+// R - READ  find  from CRUD for reading notes from the DB and sending to frontend
+app.post("/readNotes", (request, response) => {
+		todoModel.find({}, (error, results) => { // find method is error first and results second, but error and results can be renamed by other variable names... but order does matter
+			if (error) {
+				console.log(`something happened with mongoose ${error}`);
+				response.sendStatus(500);
+			} else {
+				let dataToSend = {notes: results};  // results is from the database of find method
+				console.log(dataToSend);
+				response.send(dataToSend);
+			//	console.log(results););  // searches databse within {} of the find if empty = show everything
+			}
 
-const port =3000;
+		});
 
+});
+// post handler for deletein g a note from the database
+// D findByIdAndDelete -DELETE FROM CRUD - deleting a note from the database
+app.post("/deleteNote", (request, response) => {
+	//searches the mongodb by an id and then respectively delete that object
+//	let objectToDelete = {id: request.body._id 	};
+		let objectToDelete = request.body._id	;
+//	notes[3]._id;
+// searches the mongodb by an id and deletes this value
+	todoModel.findByIdAndDelete(objectToDelete, (error, results) => { // results is the object based on the id -  returning the document that was deleted
+		if (error) {
+			console.log("something happened with mongoose",error);
+			response.sendStatus(500);
+		} else {
+			// otherwise send to front end the item we deleted
+			response.send({deleted: results});  // results here is object that is just deleted
+	//		console.log(`The ${results} item in the database was delete!`);
+		}
 
-
-http.listen(port);                 // for http requests or any port that is open
-
-
-
-console.log(`Express server is now running on port  ${port} `);
-
-//handling a POST request  eg run below made from post button
-
-// note request parameter is what is received from the client
-
-app.post("/",(receive,response)=>{
-
-  let dataRecieved = receive.body; // that is value of data of dataRecievedInResponse
-
-  let dataToSend = { message: "hi , i recieved your message"}; // sent back object response to jquery
-
-
-
-  console.log("someone made a request");
-
-  console.log(`the request sent the following to us: ` , dataRecieved.data);
-
-  // cannot do string concatenation
-
-//     response.sendStatus(503); //service unavailable
-
-    response.send(dataToSend);  // who to respond to client with an object
+	});
 
 });
 
 
+// post handler
+		app.post("/updateNote", (request, response) => {  // post frontend
+
+				let propertiesToUpdate = {
+					username: request.body.username,
+					title: request.body.title,
+					description: request.body.description,
+					priority: request.body.priority,
+					dueDate: request.body.dueDate,
+					status: request.body.status,
+					list: null
+				};
+
+				todoModel.findOneAndReplace(request.body._id, propertiesToUpdate, (error, results) => {   // backend
+
+						if (error) {
+							console.log(`something happened with mongoose ${error}`);
+							response.sendStatus(500);
+						} else {
+								response.send({updated: results});  //results copy of object before the updated
+						}
+
+				});
+
+		});
 
-
-
-
-
-app.post("/numberSaver", (receive,response) => {
-
-  let clientNumber = receive.body.userNumber;
-
-  console.log(clientNumber);
-
-
-
-  let numberArray =[];
-
-//    numberArray.push(clientNumber);
-
-
-
-
-
-
-
-  if (fs.existsSync("numbers.json") == false) {
-
-
-
-// create file if it doesn;t exist
-
-    let default1 = {currentNumbers: []};
-
-      default1 = JSON.stringify(default1);
-
-
-
-    fs.writeFileSync("numbers.json", default1,"utf8");
-
-  }
-
-
-
-
-
-// read numbers.json File
-
-        let json = fs.readFileSync("numbers.json","utf8");
-
-        let jsonObject = JSON.parse(json);  // parse and make into json object array
-
-
-
-//        let objectToSave = {currentNumbers: numberArray};
-
-    console.log(jsonObject);
-
-
-
-// load array to hokd currentNumbers
-
-      numberArray = jsonObject.currentNumbers;
-
-// push to front of array numberArray
-
-      numberArray.push(clientNumber);
-
-// save array in an object
-
-      let objectToSave = {currentNumbers: numberArray};
-
-
-
-  //    let objectToSave = {currentNumbers: []}
-
-        let jsonToSave = JSON.stringify(objectToSave);  // save to json string to use
-
-
-
-
-
-// writing to a file on the server
-
-      let contents = clientNumber;
-
-  //fs.writeFileSync('numbers.txt','utf8') =   clientNumber ;
-
-// let dataToWrite = contents + "\n  was just added to the previous text";
-
-      let dataToWrite = jsonToSave;
-
-       fs.writeFileSync("numbers.json", dataToWrite, "utf8");
-
-//       fs.ReadFileSync("numbers.json", dataToWrite, "utf8");
-
-
-
-//      fs.writeFileSync("numbers.txt", clientdataToWrite, "utf8"); // this overwrites data
-
-//      fs.appendFileSync("numbers.txt", clientdataToWrite, "utf8"); // appends to existing file
-
-      response.send(objectToSave); // send json object back to front end submit.js  dataRecievedInResponse
-
-      response.sendStatus(200);  // send status number 200 success code to browser
-
-
-
-
-
-    //  console.log('the number has been successfully saved');
-
-    //  console.log(numbers.json);
-
-
-
-
-
-
-
-});  // name of root and handling post request
 
 /*
-
-let myVariable = function() {
-
-  console.log("hello world")
-
-}
+// Model lets us create a new database with the name messages and only allows the messageSchema types in this database.
+let messageModel = new mongoose.model("messages", messageSchema);
 
 
 
-myVariable();
+// Post handler
+app.post("/saveMessage", (req, res) => {
+
+	let date = new Date();
+	let allMessages;
+
+	console.log(req.body.user);
+
+	let newMessage = new messageModel({
+		reallyCoolProp: "very important",
+		user: req.body.user,
+		message: req.body.message,
+		timestamp: date.getTime()
+	});
+
+	newMessage.save((error) => {
+		if (error) {
+			console.log("There was an issue with Mongoose", error);
+			res.sendStatus(500);
+		} else {
+			console.log("Document saved");
+
+
+			messageModel.find({}, (error, results) => {
+				console.log(results);
+				allMessages = results;
+
+				console.log(allMessages[3]._id);
+
+				let objectToDelete = allMessages[3]._id;
+
+				messageModel.findByIdAndDelete(objectToDelete, (error, results) => {
+					console.log(error, results);
+					console.log("The 4th item in the database was delete!");
+				});
+
+				let objectToUpdate = allMessages[0]._id;
+
+				messageModel.findByIdAndUpdate( objectToUpdate, {user: "Phone"}, (error, results) => {
+					console.log(error, results);
+					console.log("The 1 first item was updated.");
+				});
+
+
+
+			});
+
+
+
+
+			res.sendStatus(200);
+		}
+	});
+
+
+
+
+});
 
 */
-
